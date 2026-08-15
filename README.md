@@ -29,7 +29,7 @@
 | `6.12.30-android16-5-g6e872b4863d6-ab13847919-4k`       | REDMI Note 15 4G, POCO M6 Pro 4G                |
 | `6.12.38-android16-5-g844001fb8721-ab14552068-4k`       | OnePlus 15T                                     |
 | `6.6.30-android15-8-g54dcbfbef792-ab12368803-4k`        | Red Magic Astra                                 |
-| `6.6.92-android15-8-g3637f4904cf5-ab13944661-4k`        | Red Magic Astra                                 |
+| `6.6.92-android15-8-g3637f4904cf5-ab13944661-4k`        | Red Magic Astra, Red Magic 10 Pro               |
 
 Kernels are matched by exact `uname -r`; unsupported builds are rejected and the app shows the status at the top. Offsets live in `src/kernels/<uname-release>/offsets.h` — add new builds with the extractor's `--register`.
 
