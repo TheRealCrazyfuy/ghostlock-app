@@ -69,7 +69,7 @@ extern int g_core_consumer;
 
 #define TASK_COMM_LEN 16
 
-#define P0_KERNEL_PHYS_DELTA (P0_KERNEL_PHYS_LOAD - P0_PHYS_OFFSET)
+#define P0_KERNEL_PHYS_DELTA (p0_kernel_phys_load - P0_PHYS_OFFSET)
 #define P0_DATA_ALIAS_CONST(image_addr) \
   (P0_PAGE_OFFSET | ((image_addr) - KIMAGE_TEXT_BASE + P0_KERNEL_PHYS_DELTA))
 

@@ -3,6 +3,7 @@ API ?= 35
 # Auto-detect NDK
 ifeq ($(OS),Windows_NT)
   NDK_ROOT ?= $(subst \,/,$(firstword $(wildcard     $(subst \,/,$(LOCALAPPDATA))/Android/Sdk/ndk/*     $(subst \,/,$(ANDROID_HOME))/ndk/*     D:/AndroidSDK/ndk/*)))
+  override NDK_ROOT := $(subst \,/,$(NDK_ROOT))
   PREBUILT := windows-x86_64
   CLANG_BASE := aarch64-linux-android$(API)-clang
   NDK_CC := $(NDK_ROOT)/toolchains/llvm/prebuilt/$(PREBUILT)/bin/$(CLANG_BASE).cmd
@@ -18,6 +19,9 @@ SRCS := \
   src/core/util.c \
   src/core/fops.c
 
+# Headers also trigger a rebuild (e.g. a freshly --register-ed src/kernels/<release>/offsets.h).
+HDRS := $(wildcard src/core/*.h src/core/*/*.h src/kernels/*.h src/kernels/*/*.h)
+
 # Device offsets are selected at runtime from uname -r.
 TARGET_CONFIG ?= target.h
 
@@ -29,10 +33,10 @@ LDFLAGS := -fPIE -pie -pthread -flto
 
 all: ghostlock
 
-ghostlock: $(SRCS)
+ghostlock: $(SRCS) $(HDRS)
 	@echo "Using NDK compiler: $(NDK_CC)"
 	@echo "Target config: $(TARGET_CONFIG)"
-	$(NDK_CC) $(CFLAGS) $(LDFLAGS) $^ -o ghostlock
+	$(NDK_CC) $(CFLAGS) $(LDFLAGS) $(filter %.c,$^) -o ghostlock
 
 product: ghostlock
 	@echo "=== ghostlock binary ready: ./ghostlock ==="
