@@ -21,35 +21,39 @@ const struct kernel_offsets *active_offsets = NULL;
 static char g_home_dir[256] = "/data/local/tmp";
 static char g_root_script_path[300] = "/data/local/tmp/.ghostlock_root.sh";
 
-/* MTK loads the kernel at the DRAM base (text_offset=0), Qualcomm via the
- * bootloader; the same uname -r can serve both families, so detect at
- * runtime.  W1 has no root and /proc is SELinux-blocked: read SoC
- * properties (shared area, no permission needed). */
-static int soc_is_mtk(void) {
+/* MTK and XRing use different physical mappings from the Qualcomm default.
+ * W1 has no root and /proc is SELinux-blocked: read SoC properties from the
+ * shared property area instead. */
+enum soc_family {
+  SOC_QCOM = 0,
+  SOC_MTK,
+  SOC_XRING,
+};
+
+static enum soc_family detect_soc(void) {
   char buf[256];
-  if (__system_property_get("ro.soc.manufacturer", buf) > 0) {
-    if (strncasecmp(buf, "mediatek", 8) == 0 ||
-        strncasecmp(buf, "mtk", 3) == 0) {
-      return 1;
-    }
-    if (strncasecmp(buf, "qti", 3) == 0 ||
-        strncasecmp(buf, "qualcomm", 8) == 0) {
-      return 0;
-    }
-  }
-  const char *keys[] = {"ro.soc.model", "ro.board.platform", NULL};
+  const char *keys[] = {"ro.soc.manufacturer", "ro.soc.model",
+                        "ro.board.platform", NULL};
   for (int i = 0; keys[i]; i++) {
     if (__system_property_get(keys[i], buf) <= 0 || !buf[0]) {
       continue;
     }
-    if (strncasecmp(buf, "mt", 2) == 0) {
-      return 1;
-    }
-    if (strncasecmp(buf, "sm", 2) == 0 || strncasecmp(buf, "qcom", 4) == 0) {
-      return 0;
+    if (strncasecmp(buf, "mediatek", 8) == 0 ||
+        strncasecmp(buf, "mtk", 3) == 0 ||
+        (i > 0 && strncasecmp(buf, "mt", 2) == 0)) {
+      return SOC_MTK;
     }
   }
-  return 0;
+  for (int i = 0; keys[i]; i++) {
+    if (__system_property_get(keys[i], buf) <= 0 || !buf[0]) {
+      continue;
+    }
+    if (strncasecmp(buf, "xring", 5) == 0 ||
+        (i > 0 && strncasecmp(buf, "o1", 2) == 0)) {
+      return SOC_XRING;
+    }
+  }
+  return SOC_QCOM;
 }
 
 /* Override target.h _OFF macros with dynamic offsets from offsets.h table */
@@ -89,13 +93,17 @@ static void publish_active_offsets(void) {
   if (active_offsets->kernel_phys_load) {
     p0_kernel_phys_load = active_offsets->kernel_phys_load;
   }
-  int mtk = soc_is_mtk();
-  if (mtk) {
+  enum soc_family soc = detect_soc();
+  const char *soc_name = "qcom/other";
+  if (soc == SOC_MTK) {
     p0_kernel_phys_load = KIMAGE_TEXT_BASE - MTK_VADDR_BASE;
+    soc_name = "mtk";
+  } else if (soc == SOC_XRING) {
+    p0_kernel_phys_load = XRING_KERNEL_PHYS_LOAD;
+    soc_name = "xring";
   }
   pr_info("soc: %s; kernel_phys_load=0x%llx\n",
-          mtk ? "mtk" : "qcom/other",
-          (unsigned long long)p0_kernel_phys_load);
+          soc_name, (unsigned long long)p0_kernel_phys_load);
   pr_info("init_cred image=%016zx alias=%016zx\n",
           (size_t)g_init_cred_image, (size_t)data_addr(g_init_cred_image));
 }
@@ -489,6 +497,9 @@ static void write_root_script(void) {
       "if [ ! -x \"$KSUD\" ]; then\n"
       "  KSUD=$(find /data/app -path '*/com.resukisu.resukisu*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
       "fi\n"
+      "if [ ! -x \"$KSUD\" ]; then\n"
+      "  KSUD=$(find /data/app -path '*/com.kowx712.supermanager*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
+      "fi\n"
       "if [ -z \"$KSUD\" ]; then KSUD=/data/local/tmp/ksud; fi\n"
       "if [ ! -x \"$KSUD\" ]; then KSUD=/data/adb/ksu/bin/ksud; fi\n"
       "echo \"[*] ksud=$KSUD\" >>\"$LOG\"\n"
@@ -498,17 +509,20 @@ static void write_root_script(void) {
       "  echo '[!] temp su unavailable; aborting' | tee -a \"$LOG\"\n"
       "  exit 1\n"
       "fi\n"
+      "KVER=$(uname -r | cut -d. -f1-2)\n"
+      "AVER=$(uname -r | grep -o 'android[0-9]*' | head -1)\n"
+      "if [ -z \"$AVER\" ] || [ -z \"$KVER\" ]; then\n"
+      "  echo '[!] cannot parse KMI from uname -r' | tee -a \"$LOG\"\n"
+      "  exit 1\n"
+      "fi\n"
+      "KMI=\"${AVER}-${KVER}\"\n"
       "if ! grep -q kernelsu /proc/modules 2>/dev/null; then\n"
       "  if [ ! -x \"$KSUD\" ]; then\n"
       "    echo '[!] ksud missing; cannot late-load' | tee -a \"$LOG\"\n"
       "    exit 1\n"
       "  fi\n"
-      "  chmod 755 \"$KSUD\" 2>/dev/null\n"
-      "  KVER=$(uname -r | cut -d. -f1-2)\n"
-      "  AVER=$(uname -r | grep -o 'android[0-9]*' | head -1)\n"
-      "  KMI=\"${AVER}-${KVER}\"\n"
-      "  if [ -z \"$AVER\" ] || [ -z \"$KVER\" ]; then KMI=android15-6.6; fi\n"
       "  echo \"[*] late-load kmi=$KMI\" >>\"$LOG\"\n"
+      "  chmod 755 \"$KSUD\" 2>/dev/null\n"
       "  \"$KSUD\" late-load --kmi \"$KMI\" --allow-shell >>\"$LOG\" 2>&1\n"
       "  echo \"[*] late-load exit=$?\" >>\"$LOG\"\n"
       "fi\n"
