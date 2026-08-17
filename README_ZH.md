@@ -25,11 +25,11 @@
 | `6.12.23-android16-5-g82efd98459a2-ab14457512-4k`      | OPPO Find X9 / Find X9 Pro                      |
 | `6.12.23-android16-5-ga8f88ad96df3-ab13929693-4k`      | OnePlus 15                                      |
 | `6.12.23-android16-5-gb2a876903b49-ab14541642-4k`      | OnePlus 15                                      |
-| `6.12.23-android16-5-gf1bdb13583da-ab13761046-4k`      | Red Magic 11 Pro                                |
+| `6.12.23-android16-5-gf1bdb13583da-ab13761046-4k`      | Red Magic 11 Pro, Tablet 5 Pro                  |
 | `6.12.30-android16-5-g6e872b4863d6-ab13847919-4k`      | REDMI Note 15 4G, POCO M6 Pro 4G                |
 | `6.12.38-android16-5-g844001fb8721-ab14552068-4k`      | OnePlus 15T                                     |
-| `6.6.30-android15-8-g54dcbfbef792-ab12368803-4k`       | Red Magic Astra                                 |
-| `6.6.92-android15-8-g3637f4904cf5-ab13944661-4k`       | Red Magic Astra, Red Magic 10 Pro               |
+| `6.6.30-android15-8-g54dcbfbef792-ab12368803-4k`       | Red Magic Tablet 3 Pro                          |
+| `6.6.92-android15-8-g3637f4904cf5-ab13944661-4k`       | Red Magic Tablet 3 Pro, Red Magic 10 Pro        |
 
 按精确 `uname -r` 匹配偏移表，未匹配的内核直接拒绝运行，App 顶部显示支持状态。偏移表在 `src/kernels/<uname-release>/offsets.h`，新内核构建用提取器的 `--register` 添加。
 
