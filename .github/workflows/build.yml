@@ -20,7 +20,7 @@ env:
 
 jobs:
   build-apk:
-    name: Build Debug APK
+    name: Build APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,21 +74,28 @@ jobs:
       - name: Link ONDK Rust toolchain
         run: rustup toolchain link ondk "${{ runner.temp }}/ondk/toolchains/rust"
 
-      - name: Build Debug APK
+      - name: Decode Android signing key
+        run: echo ${{ secrets.SIGNING_KEY }} | base64 -d > keystore.jks
+
+      - name: Build Release APK
         run: |
           export ONDK_HOME="${{ runner.temp }}/ondk"
           export ANDROID_NDK_HOME="$ONDK_HOME"
           export NDK_ROOT="$ONDK_HOME"
-          ./gradlew :app:assembleDebug --no-daemon
+          export KEYSTORE_PATH="../keystore.jks"
+          export KEYSTORE_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
+          export KEY_ALIAS="${{ secrets.ALIAS }}"
+          export KEY_PASSWORD="${{ secrets.KEY_PASSWORD }}"
+          ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Rename Debug APK
-        run: mv app/build/outputs/apk/debug/*.apk GhostLock-debug.apk
+      - name: Rename Release APK
+        run: mv app/build/outputs/apk/release/*.apk GhostLock-release.apk
 
-      - name: Upload Debug APK
+      - name: Upload Release APK
         uses: actions/upload-artifact@v7
         with:
-          name: GhostLock-debug
-          path: GhostLock-debug.apk
+          name: GhostLock-release
+          path: GhostLock-release.apk
           archive: false
 
   post_telegram:
