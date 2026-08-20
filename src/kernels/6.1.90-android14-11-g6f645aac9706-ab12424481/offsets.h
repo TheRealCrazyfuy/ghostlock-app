@@ -1,7 +1,7 @@
-/* 6.1.90-android14-11-g6f645aac9706-ab12424481-4k */
+/* 6.1.90-android14-11-g6f645aac9706-ab12424481 */
 
 OFFSETS_ENTRY(
-"6.1.90-android14-11-g6f645aac9706-ab12424481-4k",
+"6.1.90-android14-11-g6f645aac9706-ab12424481",
 STRUCT_OFFSETS_6_1,
 .pselect_waiter_shift = -2,
 .off_init_task = 0x09fbed80,

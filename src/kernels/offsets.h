@@ -52,7 +52,7 @@ struct kernel_offsets {
 
 static const struct kernel_offsets known_offsets[] = {
 /* Add new kernels by creating src/kernels/<uname-release>/offsets.h */
-#include "6.1.90-android14-11-g6f645aac9706-ab12424481-4k/offsets.h"
+#include "6.1.90-android14-11-g6f645aac9706-ab12424481/offsets.h"
 #include "6.6.30-android15-8-g54dcbfbef792-ab12368803-4k/offsets.h"
 #include "6.6.77-android15-8-g4a507830d890-ab13636293-4k/offsets.h"
 #include "6.6.77-android15-8-g63ce7556864c-ab13994517-4k/offsets.h"
