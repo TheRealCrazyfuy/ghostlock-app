@@ -11,7 +11,7 @@ STRUCT_OFFSETS_6_1,
 .off_selinux_blob_sizes = 0x095cb248,
 .off_security_hook_heads = 0x095cab38,
 .off_slide_nfulnl_logger = 0x0a0029c8,
-.off_slide_boot_id = 0x0a1a1b00, // wip
+.off_slide_boot_id = 0x0a26a498,
 .off_slide_loggers_0_1 = 0x09fb2910, // wip
 ),
 
