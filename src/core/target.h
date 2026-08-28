@@ -104,4 +104,10 @@
 /* W2 payload. */
 #define CRED_COPY_OFF 0x1080
 
+/* TCP zerocopy payload offsets: fake_task sits at 0x5800 so it clears the
+ * fake_lock rb_leftmost zone; the cred copy follows because the pselect
+ * 0x1080 slot would land inside fake_task. */
+#define TCP_FAKE_TASK_OFF 0x5800
+#define TCP_CRED_COPY_OFF 0x6800
+
 #endif

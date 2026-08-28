@@ -15,6 +15,10 @@ def keystorePwd = System.getenv('KEYSTORE_PASS') ?: signingProps.getProperty('KE
 def alias = System.getenv('KEY_ALIAS') ?: signingProps.getProperty('KEY_ALIAS')
 def keyPwd = System.getenv('KEY_PASSWORD') ?: signingProps.getProperty('KEY_PASSWORD')
 
+// Pull request builds cannot access signing secrets; always use the default debug signing.
+def isPrBuild = System.getenv('GITHUB_EVENT_NAME') == 'pull_request' || (System.getenv('GITHUB_REF') ?: '').startsWith('refs/pull/')
+def hasReleaseSigning = !isPrBuild && keystorePath && keystorePwd && alias && keyPwd
+
 def gitVersionCode
 try {
     def proc = ['git', 'rev-list', '--count', 'HEAD'].execute(null, project.projectDir)
@@ -153,7 +157,7 @@ tasks.register('generateSupportedKernels') {
 
 android {
     signingConfigs {
-        if (keystorePath != null && keystorePwd != null && alias != null && keyPwd != null) {
+        if (hasReleaseSigning) {
             release {
                 storeFile file(keystorePath)
                 storePassword keystorePwd
@@ -192,7 +196,7 @@ android {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (keystorePath != null) {
+            if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             } else {
                 signingConfig signingConfigs.debug
@@ -200,7 +204,7 @@ android {
         }
         debug {
             minifyEnabled false
-            if (keystorePath != null) {
+            if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
         }
@@ -228,4 +232,11 @@ tasks.named('preBuild') {
 
 base {
     archivesName = "${appName}-v${appVersionName}(${gitVersionCode})"
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    // local unit tests run against a mockable android.jar whose org.json
+    // stubs throw; the real artifact shadows it on the test classpath
+    testImplementation 'org.json:json:20240303'
 }
