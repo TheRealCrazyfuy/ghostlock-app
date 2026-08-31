@@ -37,7 +37,7 @@ struct kernel_offsets {
   .task_pid = 0x630, .task_tgid = 0x634,                                       \
   .task_atomic_flags = 0x5F0, .task_real_cred = 0x830, .task_cred = 0x838,     \
   .task_comm = 0x848, .task_tasks = 0x550, .task_seccomp = 0x900,              \
-  .compact_waiter = 1, .mm_struct_sz = 0x400, .kernel_phys_load = 0xa8000000
+  .compact_waiter = 1, .mm_struct_sz = 0x400
 
 #define STRUCT_OFFSETS_6_12                                                    \
   .task_prio = 0x94, .task_normal_prio = 0x9C, .task_sched_task_group = 0x420, \
@@ -45,8 +45,7 @@ struct kernel_offsets {
   .task_pi_top_task = 0xA10, .task_pi_blocked_on = 0xA18,                      \
   .task_pid = 0x708, .task_tgid = 0x70C,                                       \
   .task_atomic_flags = 0x6C8, .task_real_cred = 0x8F8, .task_cred = 0x900,     \
-  .task_comm = 0x910, .task_tasks = 0x638, .task_seccomp = 0x9C8,              \
-  .kernel_phys_load = 0xc7800000
+  .task_comm = 0x910, .task_tasks = 0x638, .task_seccomp = 0x9C8
 
 #define STRUCT_OFFSETS_6_6                                                     \
   .task_prio = 0x84, .task_normal_prio = 0x8C, .task_sched_task_group = 0x348, \
@@ -54,8 +53,7 @@ struct kernel_offsets {
   .task_pi_top_task = 0x930, .task_pi_blocked_on = 0x938,                      \
   .task_pid = 0x618, .task_tgid = 0x61C,                                       \
   .task_atomic_flags = 0x5D8, .task_real_cred = 0x818, .task_cred = 0x820,     \
-  .task_comm = 0x830, .task_tasks = 0x550, .task_seccomp = 0x8E8,              \
-  .kernel_phys_load = 0xa8000000
+  .task_comm = 0x830, .task_tasks = 0x550, .task_seccomp = 0x8E8
 
 static const struct kernel_offsets known_offsets[] = {
 /* Add new kernels by creating src/kernels/<uname-release>/offsets.h */
@@ -64,6 +62,7 @@ static const struct kernel_offsets known_offsets[] = {
 #include "6.1.138-android14-11-g0c3d559bcd85-ab14529422/offsets.h"
 #include "6.1.145-android14-11-g09f1c0074ad7-ab14226177/offsets.h"
 #include "6.1.145-android14-11-g74d1702dab4d-ab14669069/offsets.h"
+#include "6.1.145-android14-11-geaa643a2c0ee-ab14763719/offsets.h"
 #include "6.1.162-android14-11-gce140c0e5bf5-ab15450923/offsets.h"
 #include "6.6.30-android15-8-g54dcbfbef792-ab12368803-4k/offsets.h"
 #include "6.6.77-android15-8-g4a507830d890-ab13636293-4k/offsets.h"

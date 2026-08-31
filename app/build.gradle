@@ -176,7 +176,7 @@ android {
 
     defaultConfig {
         applicationId "com.ghostlock.app"
-        minSdk 35
+        minSdk 34
         targetSdk 37
         versionCode gitVersionCode
         versionName appVersionName
@@ -236,7 +236,5 @@ base {
 
 dependencies {
     testImplementation 'junit:junit:4.13.2'
-    // local unit tests run against a mockable android.jar whose org.json
-    // stubs throw; the real artifact shadows it on the test classpath
-    testImplementation 'org.json:json:20240303'
+    testImplementation 'org.json:json:20260814'
 }

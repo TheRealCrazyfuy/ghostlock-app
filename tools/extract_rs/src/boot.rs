@@ -24,7 +24,7 @@ pub const QC_PHYS_LOAD_6_12: u64 = 0xC780_0000;
 /// by size-prefixed blocks, ending once a block decompresses under 8 MiB.
 pub fn decompress_lz4_legacy(payload: &[u8]) -> Result<Vec<u8>> {
     let out = decompress_lz4_legacy_frame(payload)?;
-    if out.len() < 4 || &out[0..2] != b"MZ" || &out[0x38..0x3C] != b"ARM\x64" {
+    if out.len() < 0x3C || &out[0..2] != b"MZ" || &out[0x38..0x3C] != b"ARM\x64" {
         return Err(ExtractError::new(
             "LZ4 decompression did not yield an arm64 Image",
         ));
@@ -279,16 +279,16 @@ impl BootImage {
             }
             let magic = u16::from_le_bytes(self.kernel[pos..pos + 2].try_into().unwrap());
             let version = self.kernel[pos + 2];
-            let hdr_len = u32::from_le_bytes(self.kernel[pos + 4..pos + 8].try_into().unwrap())
-                as usize;
-            let type_off = u32::from_le_bytes(self.kernel[pos + 8..pos + 12].try_into().unwrap())
-                as usize;
-            let type_len = u32::from_le_bytes(self.kernel[pos + 12..pos + 16].try_into().unwrap())
-                as usize;
-            let str_off = u32::from_le_bytes(self.kernel[pos + 16..pos + 20].try_into().unwrap())
-                as usize;
-            let str_len = u32::from_le_bytes(self.kernel[pos + 20..pos + 24].try_into().unwrap())
-                as usize;
+            let hdr_len =
+                u32::from_le_bytes(self.kernel[pos + 4..pos + 8].try_into().unwrap()) as usize;
+            let type_off =
+                u32::from_le_bytes(self.kernel[pos + 8..pos + 12].try_into().unwrap()) as usize;
+            let type_len =
+                u32::from_le_bytes(self.kernel[pos + 12..pos + 16].try_into().unwrap()) as usize;
+            let str_off =
+                u32::from_le_bytes(self.kernel[pos + 16..pos + 20].try_into().unwrap()) as usize;
+            let str_len =
+                u32::from_le_bytes(self.kernel[pos + 20..pos + 24].try_into().unwrap()) as usize;
             if magic != BTF_MAGIC || version != 1 || hdr_len < 24 {
                 continue;
             }

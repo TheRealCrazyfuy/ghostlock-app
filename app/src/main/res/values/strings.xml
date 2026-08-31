@@ -26,6 +26,7 @@
     <string name="parse_failed">Parse failed</string>
     <string name="parse_failed_route">Kernel incompatible with the current exploit chain</string>
     <string name="parse_failed_kallsyms">Cannot recover kernel symbol table</string>
+    <string name="parse_failed_fixed">This kernel already fixed the vulnerability</string>
     <string name="parse_failed_url">Invalid OTA URL</string>
     <string name="parse_timeout">Parse timed out</string>
     <string name="cancel">Cancel</string>

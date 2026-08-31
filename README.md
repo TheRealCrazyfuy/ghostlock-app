@@ -5,12 +5,13 @@
 ## Supported Devices
 
 | Kernel                                                 | Devices                                                          |
-| ------------------------------------------------------ |------------------------------------------------------------------|
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `6.1.118-android14-11-ga3b9c44908dd-ab13320413`        | Redmi Note 15 Pro+                                               |
 | `6.1.118-android14-11-gca0ef6d17716-ab13624819`        | Xiaomi 14                                                        |
 | `6.1.138-android14-11-g0c3d559bcd85-ab14529422`        | Xiaomi 14                                                        |
 | `6.1.145-android14-11-g09f1c0074ad7-ab14226177`        | Infinix Note 50s 5G                                              |
-| `6.1.145-android14-11-g74d1702dab4d-ab14669069`        | Vivo T4                                                          | 
+| `6.1.145-android14-11-g74d1702dab4d-ab14669069`        | vivo T4                                                          |
+| `6.1.145-android14-11-geaa643a2c0ee-ab14763719`        | Motorola Razr 50 Ultra / Motorola Razr+ 2024                     |
 | `6.1.162-android14-11-gce140c0e5bf5-ab15450923`        | Zenfone 11 Ultra                                                 |
 | `6.6.30-android15-8-g54dcbfbef792-ab12368803-4k`       | Red Magic Tablet 3 Pro                                           |
 | `6.6.77-android15-8-g4a507830d890-ab13636293-4k`       | Xiaomi Civi 5 Pro, REDMI K90 / 4 Turbo, POCO F7                  |
@@ -45,9 +46,9 @@ Kernels are matched by exact `uname -r`; unsupported builds are rejected and the
 
 ## Quick Start
 
-Open **GhostLock** and tap **Run**. KernelSU (`me.weishu.kernelsu`) or ReSukiSU (`com.resukisu.resukisu`) provides `ksud` for module loading; without it, W1/W2 still grant uid 0 but no module is loaded.
+Open **GhostLock** and tap **Run**. KernelSU (`me.weishu.kernelsu`), ReSukiSU (`com.resukisu.resukisu`), or KowsuSuperManager (`com.kowx712.supermanager`) provides `ksud` for module loading; without it, W1/W2 still grant uid 0 but no module is loaded.
 
-The route races two cores: the main thread hammers `pselect` while a consumer thread perturbs the waiter's priority. The pair defaults to the big cores (fallback 0/1), overridable via `GHOSTLOCK_CORE` / `GHOSTLOCK_CONSUMER_CORE`.
+The route races two cores. On the 6.6/6.12 tree-waiter kernels the main thread hammers `select` while a consumer thread perturbs the waiter's priority; on the 6.1 compact-waiter kernels the main thread drives `getsockopt(TCP_ZEROCOPY_RECEIVE)` through a punched-hole page instead (`GHOSTLOCK_TCP_ROUTE=0` forces the pselect route). The pair defaults to the big cores (fallback 0/1), overridable via `GHOSTLOCK_CORE` / `GHOSTLOCK_CONSUMER_CORE`.
 
 ## Command-Line Debugging
 
@@ -71,6 +72,10 @@ tools/extract_rs/target/release/ghostlock-extract.exe OTA.zip --format json --ou
 ```
 
 `--register` saves the table under `src/kernels/<uname-release>/offsets.h`; `--format c --out offsets.h` dumps a standalone header.
+
+### Preflight
+
+The extractor disassembles `remove_waiter()` before extracting offsets. Kernels with the fix are rejected with exit code `6`; only vulnerable kernels continue.
 
 ### On-device analysis
 
