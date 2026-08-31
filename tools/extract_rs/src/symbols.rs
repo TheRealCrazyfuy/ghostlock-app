@@ -18,9 +18,7 @@ pub const SYMBOLS: &[(&str, &str)] = &[
 
 /// GKI kernels drop some data symbols; unresolved optionals emit 0 and the
 /// runtime falls back to target.h defaults.
-pub const OPTIONAL_SYMBOLS: &[&str] = &[
-    "off_security_hook_heads",
-];
+pub const OPTIONAL_SYMBOLS: &[&str] = &["off_security_hook_heads"];
 
 /// struct name -> (offset macro, BTF field)
 pub const STRUCT_FIELDS: &[(&str, &[(&str, &str)])] = &[
@@ -80,10 +78,7 @@ pub const STRUCT_FIELDS: &[(&str, &[(&str, &str)])] = &[
 
 pub type ResolvedSymbols = BTreeMap<String, Option<u64>>;
 
-pub fn resolve_symbols(
-    symbols: &BTreeMap<String, BTreeSet<u64>>,
-    base: u64,
-) -> ResolvedSymbols {
+pub fn resolve_symbols(symbols: &BTreeMap<String, BTreeSet<u64>>, base: u64) -> ResolvedSymbols {
     let mut result: ResolvedSymbols = BTreeMap::new();
     for (name, symbol) in SYMBOLS {
         result.insert((*name).to_string(), unique(symbols, symbol));
@@ -159,7 +154,10 @@ pub fn resolve_structs(btf: Option<&Btf>) -> ResolvedStructs {
         "struct_page_compound_head".to_string(),
         btf.field("page", "compound_head"),
     );
-    result.insert("struct_page_type".to_string(), btf.field("page", "page_type"));
+    result.insert(
+        "struct_page_type".to_string(),
+        btf.field("page", "page_type"),
+    );
     result.insert(
         "struct_slab_cache".to_string(),
         btf.field("slab", "slab_cache"),

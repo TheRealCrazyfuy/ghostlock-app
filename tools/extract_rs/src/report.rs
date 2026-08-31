@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::{ExtractError, Result};
 use crate::symbols::{OPTIONAL_SYMBOLS, STRUCT_FIELDS, SYMBOLS};
@@ -79,11 +79,7 @@ pub fn pselect_waiter_shift_for(release: Option<&str>) -> i64 {
     }
 }
 
-pub fn validate_kernel_phys_load(
-    release: Option<&str>,
-    phys: Option<u64>,
-    mtk: bool,
-) -> bool {
+pub fn validate_kernel_phys_load(release: Option<&str>, phys: Option<u64>, mtk: bool) -> bool {
     let Some(phys) = phys else {
         return false;
     };
@@ -141,9 +137,7 @@ pub fn render_device(
     lines.push("),".to_string());
     let mut reference: Vec<(&str, u32)> = Vec::new();
     for key in struct_render_order() {
-        if key.starts_with("struct_page")
-            || key == "struct_slab_cache"
-            || key == "struct_mm_struct"
+        if key.starts_with("struct_page") || key == "struct_slab_cache" || key == "struct_mm_struct"
         {
             if let Some(value) = structs.get(key).copied().flatten() {
                 reference.push((key, value));
@@ -154,7 +148,11 @@ pub fn render_device(
         lines.push(String::new());
         lines.push("/* BTF reference (runtime uses target.h defaults): */".to_string());
         for (key, value) in &reference {
-            lines.push(format!("/* #define {} 0x{:X} */", key.to_uppercase(), value));
+            lines.push(format!(
+                "/* #define {} 0x{:X} */",
+                key.to_uppercase(),
+                value
+            ));
         }
     }
     lines.join("\n") + "\n"
@@ -169,7 +167,10 @@ pub fn render_c(
     pselect_shift: i64,
 ) -> String {
     let label = release.unwrap_or(name);
-    let mut lines = vec![format!("/* Generated offsets for {label}. */"), String::new()];
+    let mut lines = vec![
+        format!("/* Generated offsets for {label}. */"),
+        String::new(),
+    ];
     lines.push("#define STRUCT_OFFSETS_EXTRACTED \\".to_string());
     let task_keys = [
         "task_prio",
@@ -350,10 +351,7 @@ pub fn existing_entries() -> BTreeMap<String, EntryFields> {
             let tail = &text[entry_match.get(0).unwrap().end()..];
             let mut fields: EntryFields = BTreeMap::new();
             for field_match in field_re.captures_iter(tail) {
-                fields.insert(
-                    field_match[1].to_string(),
-                    parse_int(&field_match[2]),
-                );
+                fields.insert(field_match[1].to_string(), parse_int(&field_match[2]));
             }
             entries.entry(release).or_insert(fields);
         }
@@ -361,10 +359,7 @@ pub fn existing_entries() -> BTreeMap<String, EntryFields> {
     entries
 }
 
-pub fn warn_existing_mismatches(
-    release: &str,
-    symbols: &BTreeMap<String, Option<u64>>,
-) {
+pub fn warn_existing_mismatches(release: &str, symbols: &BTreeMap<String, Option<u64>>) {
     let entries = existing_entries();
     let Some(existing) = entries.get(release) else {
         return;
@@ -400,7 +395,10 @@ fn kernel_include_sort_key(include: &str) -> Vec<(u8, SortPart)> {
     for caps in re.captures_iter(path) {
         let matched = caps.get(0).unwrap();
         if matched.start() > cursor {
-            key.push((1, SortPart::Text(path[cursor..matched.start()].to_ascii_lowercase())));
+            key.push((
+                1,
+                SortPart::Text(path[cursor..matched.start()].to_ascii_lowercase()),
+            ));
         }
         key.push((0, SortPart::Digit(matched.as_str().parse::<u64>().unwrap())));
         cursor = matched.end();
@@ -491,7 +489,8 @@ pub fn task_keys_list() -> &'static [&'static str] {
     ]
 }
 
-pub fn struct_fields_reference() -> &'static [(&'static str, &'static [(&'static str, &'static str)])] {
+pub fn struct_fields_reference()
+-> &'static [(&'static str, &'static [(&'static str, &'static str)])] {
     STRUCT_FIELDS
 }
 
@@ -531,9 +530,7 @@ mod tests {
     #[test]
     fn pselect_waiter_shift_matches_the_committed_tables() {
         assert_eq!(
-            pselect_waiter_shift_for(Some(
-                "6.1.118-android14-11-gca0ef6d17716-ab13624819"
-            )),
+            pselect_waiter_shift_for(Some("6.1.118-android14-11-gca0ef6d17716-ab13624819")),
             1
         );
         assert_eq!(pselect_waiter_shift_for(Some("6.6.92-android15-8")), -2);

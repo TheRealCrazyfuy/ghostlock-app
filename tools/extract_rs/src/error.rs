@@ -11,6 +11,10 @@ pub enum ExtractError {
     /// The kernel lacks offsets the exploit chain needs.
     #[error("kernel missing required offsets: {0}")]
     Unsupported(String),
+    /// The kernel already includes the rtmutex remove_waiter() fix,
+    /// so the chain cannot work.
+    #[error("kernel already fixed the vulnerability: {0}")]
+    AlreadyFixed(String),
     /// The embedded kallsyms table could not be recovered from the image.
     #[error("kallsyms recovery failed: {0}")]
     Kallsyms(String),
@@ -27,6 +31,10 @@ impl ExtractError {
 
     pub fn unsupported(msg: impl Into<String>) -> Self {
         ExtractError::Unsupported(msg.into())
+    }
+
+    pub fn already_fixed(msg: impl Into<String>) -> Self {
+        ExtractError::AlreadyFixed(msg.into())
     }
 
     pub fn kallsyms(msg: impl Into<String>) -> Self {

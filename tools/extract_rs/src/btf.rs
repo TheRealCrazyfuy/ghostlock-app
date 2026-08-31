@@ -141,9 +141,9 @@ impl Btf {
                 enum_values: Vec::new(),
             };
             if kind == KIND_STRUCT || kind == KIND_UNION {
-                let extra = vlen.checked_mul(12).ok_or_else(|| {
-                    ExtractError::new("truncated BTF members (overflow)")
-                })?;
+                let extra = vlen
+                    .checked_mul(12)
+                    .ok_or_else(|| ExtractError::new("truncated BTF members (overflow)"))?;
                 if cursor + extra > types_raw.len() {
                     return Err(ExtractError::new("truncated BTF members"));
                 }
@@ -160,9 +160,9 @@ impl Btf {
                 }
                 cursor += extra;
             } else if kind == KIND_ENUM {
-                let extra = vlen.checked_mul(8).ok_or_else(|| {
-                    ExtractError::new("truncated BTF enum members (overflow)")
-                })?;
+                let extra = vlen
+                    .checked_mul(8)
+                    .ok_or_else(|| ExtractError::new("truncated BTF enum members (overflow)"))?;
                 if cursor + extra > types_raw.len() {
                     return Err(ExtractError::new("truncated BTF enum members"));
                 }
@@ -180,9 +180,9 @@ impl Btf {
                 }
                 cursor += extra;
             } else if kind == KIND_ENUM64 {
-                let extra = vlen.checked_mul(12).ok_or_else(|| {
-                    ExtractError::new("truncated BTF enum64 members (overflow)")
-                })?;
+                let extra = vlen
+                    .checked_mul(12)
+                    .ok_or_else(|| ExtractError::new("truncated BTF enum64 members (overflow)"))?;
                 if cursor + extra > types_raw.len() {
                     return Err(ExtractError::new("truncated BTF enum64 members"));
                 }
@@ -211,10 +211,7 @@ impl Btf {
                     cursor += unit;
                 }
             }
-            self.by_name
-                .entry(name.clone())
-                .or_default()
-                .push(type_id);
+            self.by_name.entry(name.clone()).or_default().push(type_id);
             self.types.insert(type_id, item);
             type_id += 1;
         }
@@ -242,11 +239,7 @@ impl Btf {
             let item = self.types.get(&type_id)?;
             if !matches!(
                 item.kind,
-                KIND_TYPEDEF
-                    | KIND_VOLATILE
-                    | KIND_CONST
-                    | KIND_RESTRICT
-                    | KIND_TYPE_TAG
+                KIND_TYPEDEF | KIND_VOLATILE | KIND_CONST | KIND_RESTRICT | KIND_TYPE_TAG
             ) {
                 return Some(item);
             }
@@ -260,9 +253,12 @@ impl Btf {
         item: &BtfType,
         name: &str,
         base: u32,
+        depth: usize,
         seen: &mut HashSet<u32>,
     ) -> Option<u32> {
-        if seen.contains(&item.type_id) {
+        // the shared seen set bounds nested anonymous members; the depth
+        // cap catches cycles
+        if depth > 64 || seen.contains(&item.type_id) {
             return None;
         }
         seen.insert(item.type_id);
@@ -274,8 +270,7 @@ impl Btf {
             if member.name.is_empty() {
                 if let Some(child) = self.resolve(member.type_id) {
                     if child.kind == KIND_STRUCT || child.kind == KIND_UNION {
-                        if let Some(found) =
-                            self.find_member(child, name, offset, &mut seen.clone())
+                        if let Some(found) = self.find_member(child, name, offset, depth + 1, seen)
                         {
                             return Some(found);
                         }
@@ -288,7 +283,7 @@ impl Btf {
 
     pub fn field(&self, struct_name: &str, field_name: &str) -> Option<u32> {
         let item = self.named_struct(struct_name)?;
-        self.find_member(item, field_name, 0, &mut HashSet::new())
+        self.find_member(item, field_name, 0, 0, &mut HashSet::new())
     }
 
     pub fn size(&self, struct_name: &str) -> Option<u32> {

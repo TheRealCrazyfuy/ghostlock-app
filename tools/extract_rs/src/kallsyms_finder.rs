@@ -89,7 +89,10 @@ fn parse_token_table_at(image: &[u8], start: usize, digit_offset: usize) -> Opti
     for _ in 0..TOKEN_COUNT {
         token_starts.push(position);
         let search_end = position.checked_add(MAX_TOKEN_LEN + 1)?.min(image.len());
-        let length = image.get(position..search_end)?.iter().position(|byte| *byte == 0)?;
+        let length = image
+            .get(position..search_end)?
+            .iter()
+            .position(|byte| *byte == 0)?;
         if length == 0 {
             return None;
         }
@@ -113,7 +116,11 @@ fn parse_token_table_at(image: &[u8], start: usize, digit_offset: usize) -> Opti
     }
 
     let index_offset = align_up(position, ALIGN);
-    if image.get(position..index_offset)?.iter().any(|byte| *byte != 0) {
+    if image
+        .get(position..index_offset)?
+        .iter()
+        .any(|byte| *byte != 0)
+    {
         return None;
     }
     let index_end = index_offset.checked_add(TOKEN_INDEX_SIZE)?;
@@ -142,8 +149,7 @@ fn find_token_tables(image: &[u8]) -> Vec<TokenTable> {
     let mut tables = Vec::new();
     let mut search_from = 0;
     while let Some(digit_offset) = find_subslice(image, &digit_needle, search_from) {
-        let earliest =
-            digit_offset.saturating_sub(b'0' as usize * (MAX_TOKEN_LEN + 1));
+        let earliest = digit_offset.saturating_sub(b'0' as usize * (MAX_TOKEN_LEN + 1));
         let mut start = align_up(earliest, ALIGN);
         while start <= digit_offset {
             if let Some(table) = parse_token_table_at(image, start, digit_offset) {
@@ -235,10 +241,7 @@ fn parse_name_spans(
             length = (length & 0x7f) | (high << 7);
             position += 1;
         }
-        if length == 0
-            || length > 0x3fff
-            || position.checked_add(length)? > markers_offset
-        {
+        if length == 0 || length > 0x3fff || position.checked_add(length)? > markers_offset {
             return None;
         }
         spans.push((position, length));
@@ -246,7 +249,10 @@ fn parse_name_spans(
     }
 
     if align_up(position, ALIGN) != markers_offset
-        || image.get(position..markers_offset)?.iter().any(|byte| *byte != 0)
+        || image
+            .get(position..markers_offset)?
+            .iter()
+            .any(|byte| *byte != 0)
     {
         return None;
     }
@@ -283,11 +289,11 @@ fn decode_names(
         decoded.push((kind, String::from_utf8(name_bytes.to_vec()).ok()?));
     }
 
-    let names: BTreeSet<&str> = decoded
+    let names: BTreeSet<&str> = decoded.iter().map(|(_, name)| name.as_str()).collect();
+    if REQUIRED_SYMBOLS
         .iter()
-        .map(|(_, name)| name.as_str())
-        .collect();
-    if REQUIRED_SYMBOLS.iter().any(|required| !names.contains(required)) {
+        .any(|required| !names.contains(required))
+    {
         return None;
     }
     Some(decoded)
@@ -299,11 +305,7 @@ type NameTable = (usize, usize, usize, Vec<(u8, String)>);
 /// Recover the names block: search for markers before the token table, then
 /// hunt for the `num_syms` word whose count and padding line up with the
 /// markers, decoding both u8 and uleb128 length encodings.
-fn find_name_tables(
-    image: &[u8],
-    tokens: &[Vec<u8>],
-    token_table_offset: usize,
-) -> Vec<NameTable> {
+fn find_name_tables(image: &[u8], tokens: &[Vec<u8>], token_table_offset: usize) -> Vec<NameTable> {
     let lower = token_table_offset.saturating_sub(MARKER_SEARCH_WINDOW);
     let mut marker_candidates = Vec::new();
     let mut position = align_up(lower, ALIGN);
@@ -389,7 +391,10 @@ fn decode_addresses(
     if offsets_end > image.len()
         || relative_base_offset < offsets_end
         || relative_base_offset.checked_add(8)? > image.len()
-        || image.get(offsets_end..relative_base_offset)?.iter().any(|byte| *byte != 0)
+        || image
+            .get(offsets_end..relative_base_offset)?
+            .iter()
+            .any(|byte| *byte != 0)
     {
         return None;
     }

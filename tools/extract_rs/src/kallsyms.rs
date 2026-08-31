@@ -57,7 +57,10 @@ pub fn unique_or_err(symbols: &BTreeMap<String, BTreeSet<u64>>, name: &str) -> R
     Ok(*values.iter().next().unwrap())
 }
 
-pub fn unique_offset_optional(symbols: &BTreeMap<String, BTreeSet<u64>>, name: &str) -> Option<u64> {
+pub fn unique_offset_optional(
+    symbols: &BTreeMap<String, BTreeSet<u64>>,
+    name: &str,
+) -> Option<u64> {
     unique_or_err(symbols, name).ok()
 }
 
@@ -75,10 +78,10 @@ pub fn find_data_symbol(
         if fragments.is_empty() {
             continue;
         }
-        if !fragments
-            .iter()
-            .all(|fragment| name.to_ascii_lowercase().contains(&fragment.to_ascii_lowercase()))
-        {
+        if !fragments.iter().all(|fragment| {
+            name.to_ascii_lowercase()
+                .contains(&fragment.to_ascii_lowercase())
+        }) {
             continue;
         }
         let is_data = types
@@ -107,10 +110,10 @@ pub fn find_function(
     }
     let mut matches: BTreeSet<u64> = BTreeSet::new();
     for (name, values) in symbols {
-        if fragments
-            .iter()
-            .all(|fragment| name.to_ascii_lowercase().contains(&fragment.to_ascii_lowercase()))
-        {
+        if fragments.iter().all(|fragment| {
+            name.to_ascii_lowercase()
+                .contains(&fragment.to_ascii_lowercase())
+        }) {
             matches.extend(values.iter().copied());
         }
     }

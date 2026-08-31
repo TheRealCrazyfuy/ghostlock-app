@@ -26,6 +26,7 @@
     <string name="parse_failed">解析失败</string>
     <string name="parse_failed_route">内核不支持当前利用链</string>
     <string name="parse_failed_kallsyms">无法从该内核恢复符号表</string>
+    <string name="parse_failed_fixed">此内核已修复该漏洞</string>
     <string name="parse_failed_url">OTA 链接无效</string>
     <string name="parse_timeout">解析超时</string>
     <string name="cancel">取消</string>
