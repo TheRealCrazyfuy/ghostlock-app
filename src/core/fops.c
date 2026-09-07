@@ -374,6 +374,27 @@ void open_selected_fds(
   FD_SET(PSELECT_ROUTE_NFDS - 1, ex);
 }
 
+static int standard_io_backup[3] = {-1, -1, -1};
+
+void reserve_standard_io(void) {
+  for (int fd = 0; fd < 3; fd++) {
+    if (standard_io_backup[fd] >= 0) continue;
+    int backup = fcntl(fd, F_DUPFD, PSELECT_ROUTE_NFDS + 64);
+    if (backup < 0) {
+      pr_warning("standard io backup failed fd=%d errno=%d\n", fd, errno);
+    } else {
+      standard_io_backup[fd] = backup;
+    }
+  }
+}
+
+static void restore_standard_io(void) {
+  for (int fd = 0; fd < 3; fd++) {
+    if (standard_io_backup[fd] < 0) continue;
+    dup2(standard_io_backup[fd], fd);
+  }
+}
+
 void prepare_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
   FD_ZERO(in);
   FD_ZERO(out);
@@ -491,6 +512,9 @@ void do_pselect_fake_lock_route(void) {
           (unsigned long long)fdset_get_word(&ex, 1),
           (unsigned long long)fdset_get_word(&ex, 2),
           (unsigned long long)fdset_get_word(&ex, 3));
+
+  /* The route may replace low fds, including stdout and stderr. */
+  reserve_standard_io();
   open_selected_fds(&in, &out, &ex, high_read, pipefd[1]);
   close(high_read);
 
@@ -524,6 +548,7 @@ void do_pselect_fake_lock_route(void) {
     ret = select(PSELECT_ROUTE_NFDS, &in, &out, &ex, &timeout);
   }
   int saved_errno = errno;
+  restore_standard_io();
   pr_info("pselect post-select compact=%d +%.0fms ret=%d\n", compact_route,
           fops_elapsed_ms(&route_t0), ret);
   atomic_store(&punch_consume_go, 0);

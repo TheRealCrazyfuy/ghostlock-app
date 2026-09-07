@@ -198,6 +198,7 @@ uint64_t fdset_get_word(const fd_set *set, int word);
 int tcp_route_selected(void);
 void open_selected_fds(
     fd_set *in, fd_set *out, fd_set *ex, int read_fd, int write_fd);
+void reserve_standard_io(void);
 void prepare_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex);
 void do_pselect_fake_lock_route(void);
 void do_tcp_fake_lock_route(void);
